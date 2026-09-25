@@ -1,9 +1,15 @@
-// Import Supabase correctly as an ES Module in the browser
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@+esm';
+// Use explicit versioned ES module import for mobile compatibility
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
 const SUPABASE_URL = 'https://qifbjgbzgpgssnygidnp.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__U3W_syaAWEnDZBi2hmKFw_k5iM1cxX';
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let supabase;
+try {
+  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+} catch (e) {
+  console.error("Supabase init error:", e);
+}
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -11,15 +17,6 @@ const startBtn = document.getElementById('startBtn');
 const leftBtn = document.getElementById('leftBtn');
 const rightBtn = document.getElementById('rightBtn');
 const statusDiv = document.getElementById('status');
-const policyToggle = document.getElementById('policyToggle');
-const policyBox = document.getElementById('policyBox');
-
-if (policyToggle) {
-  policyToggle.addEventListener('click', (e) => {
-    e.preventDefault();
-    policyBox.style.display = policyBox.style.display === 'none' ? 'block' : 'none';
-  });
-}
 
 let gameInterval;
 let isRunning = false;
@@ -27,17 +24,40 @@ let score = 0;
 let sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
 
 const player = { x: 180, y: 420, width: 40, height: 60, speed: 20 };
-const enemy = { x: Math.random() * (canvas.width - 40), y: -60, width: 40, height: 60, speed: 4 };
+const enemy = { x: 180, y: 50, width: 40, height: 60, speed: 4 };
+
+// Draw initial state immediately so the screen isn't just a blank box
+draw();
+
+// Button and Key Listeners
+if (startBtn) {
+  startBtn.addEventListener('click', startGame);
+}
+
+if (leftBtn) {
+  leftBtn.addEventListener('click', () => {
+    if (isRunning && player.x > 0) {
+      player.x -= player.speed;
+      draw();
+    }
+  });
+}
+
+if (rightBtn) {
+  rightBtn.addEventListener('click', () => {
+    if (isRunning && player.x < canvas.width - player.width) {
+      player.x += player.speed;
+      draw();
+    }
+  });
+}
 
 document.addEventListener('keydown', (e) => {
   if (!isRunning) return;
   if (e.key === 'ArrowLeft' && player.x > 0) player.x -= player.speed;
   if (e.key === 'ArrowRight' && player.x < canvas.width - player.width) player.x += player.speed;
+  draw();
 });
-
-leftBtn.addEventListener('click', () => { if (isRunning && player.x > 0) player.x -= player.speed; });
-rightBtn.addEventListener('click', () => { if (isRunning && player.x < canvas.width - player.width) player.x += player.speed; });
-startBtn.addEventListener('click', startGame);
 
 function startGame() {
   if (isRunning) return;
@@ -47,6 +67,8 @@ function startGame() {
   enemy.y = -60;
   enemy.x = Math.random() * (canvas.width - 40);
   statusDiv.innerText = "Game Running... Score: 0";
+  
+  if (gameInterval) clearInterval(gameInterval);
   gameInterval = setInterval(updateGame, 1000 / 30);
 }
 
@@ -59,6 +81,7 @@ function updateGame() {
     statusDiv.innerText = `Game Running... Score: ${score}`;
   }
 
+  // Collision detection
   if (
     player.x < enemy.x + enemy.width &&
     player.x + player.width > enemy.x &&
@@ -66,59 +89,52 @@ function updateGame() {
     player.y + player.height > enemy.y
   ) {
     endGame();
+    return;
   }
+
   draw();
 }
 
 function draw() {
+  if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  
+  // Draw road lines or background element
+  ctx.strokeStyle = '#555';
+  ctx.setLineDash([10, 10]);
+  ctx.beginPath();
+  ctx.moveTo(200, 0);
+  ctx.lineTo(200, canvas.height);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Draw player car (blue)
   ctx.fillStyle = '#007bff';
   ctx.fillRect(player.x, player.y, player.width, player.height);
+
+  // Draw enemy car (red)
   ctx.fillStyle = '#dc3545';
   ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
 }
 
-async function endGame() {
+function endGame() {
   clearInterval(gameInterval);
   isRunning = false;
-  statusDiv.innerText = `Game Over! Final Score: ${score}`;
-  await saveCompliantSessionData(score);
+  statusDiv.innerText = `Game Over! Final Score: ${score}. Saving...`;
+  saveSessionToSupabase(score);
 }
 
-async function getAnonymizedIP() {
-  try {
-    const response = await fetch('https://api.ipify.org?format=json');
-    const data = await response.json();
-    const ip = data.ip;
-    if (ip.includes('.')) {
-      return ip.split('.').slice(0, 3).join('.') + '.0';
-    }
-    return 'anonymized-ipv6';
-  } catch (err) {
-    return 'unavailable';
+async function saveSessionToSupabase(finalScore) {
+  if (!supabase) {
+    statusDiv.innerText = `Game Over! Score: ${finalScore} (Supabase not initialized)`;
+    return;
   }
-}
 
-async function getBatteryPercentage() {
-  if ('getBattery' in navigator) {
-    try {
-      const battery = await navigator.getBattery();
-      return `${Math.round(battery.level * 100)}%`;
-    } catch (e) {
-      return 'Unavailable';
-    }
-  }
-  return 'Not Supported';
-}
-
-async function saveCompliantSessionData(finalScore) {
   try {
+    const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const screenResolution = `${window.screen.width}x${window.screen.height}`;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
     const browserLanguage = navigator.language || 'Unknown';
-    const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    const anonymizedIp = await getAnonymizedIP();
-    const batteryPercentage = await getBatteryPercentage();
 
     const { data, error } = await supabase
       .from('game_sessions')
@@ -130,18 +146,18 @@ async function saveCompliantSessionData(finalScore) {
           preferred_theme: preferredTheme,
           screen_resolution: screenResolution,
           time_zone: timeZone,
-          browser_language: browserLanguage,
-          anonymized_ip: anonymizedIp,
-          battery_percentage: batteryPercentage
+          browser_language: browserLanguage
         }
       ]);
 
     if (error) {
-      console.error('Supabase Error:', error.message);
+      console.error('Supabase Insert Error:', error.message);
+      statusDiv.innerText = `Game Over! Score: ${finalScore} (Save failed)`;
     } else {
-      console.log('Compliant session data logged successfully!');
+      statusDiv.innerText = `Game Over! Score: ${finalScore} (Saved to Supabase!)`;
     }
   } catch (err) {
-    console.error('Error logging session:', err);
+    console.error('Network exception:', err);
+    statusDiv.innerText = `Game Over! Score: ${finalScore} (Network error)`;
   }
 }
