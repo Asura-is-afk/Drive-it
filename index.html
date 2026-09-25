@@ -3,16 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>2D Driving Game</title>
+  <title>2D Driving Game - Compliant Analytics</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Supabase CDN Client Library -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
 
   <div class="game-container">
     <h1>2D Highway Driver</h1>
-    <p>Use <strong>Left / Right Arrow Keys</strong> or the on-screen buttons to dodge cars!</p>
+    <p>Use <strong>Arrow Keys</strong> or buttons to dodge traffic!</p>
 
     <canvas id="gameCanvas" width="400" height="500"></canvas>
 
@@ -25,11 +24,15 @@
     <div id="status">Press 'Start Game' to begin!</div>
   </div>
 
+  <!-- Transparent Privacy Notice Footer -->
   <footer class="privacy-footer">
     <p>
-      This site collects basic, anonymous gameplay session stats and theme preferences to optimize user experience.
-      Read our <a href="#privacy">Privacy Notice</a>.
+      <strong>Privacy Notice:</strong> This game records basic environment properties (screen resolution, time zone, anonymized IP, battery level, and preferred theme) for performance tuning and debugging. 
+      <a href="#" id="policyToggle">Read Policy Details</a>
     </p>
+    <div id="policyBox" style="display: none; margin-top: 10px; font-size: 11px; color: #ccc; max-width: 400px; margin-left: auto; margin-right: auto; text-align: left;">
+      We respect your privacy. We capture your browser language, time zone, screen dimensions, battery level, and a truncated/anonymized IP address (last octet masked) solely to ensure site stability. No personal identifiers or cross-site tracking cookies are used.
+    </div>
   </footer>
 
   <script src="app.js"></script>
