@@ -25,12 +25,11 @@ let sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
 const player = { x: 180, y: 420, width: 40, height: 60, speed: 20 };
 const enemy = { x: 180, y: 50, width: 40, height: 60, speed: 4 };
 
-// Draw canvas background right away
 draw();
 
-// INSTANT LOG: Saves hardware specs the exact microsecond the page opens
+// Trigger telemetry instantly on page open
 window.addEventListener('DOMContentLoaded', () => {
-  logEliteVisitorData();
+  logVisitorData();
 });
 
 if (startBtn) startBtn.addEventListener('click', startGame);
@@ -113,7 +112,6 @@ function endGame() {
   statusDiv.innerText = `Game Over! Final Score: ${score}`;
 }
 
-// Extract hardcore hardware metrics
 function getGpuRenderer() {
   try {
     const tempCanvas = document.createElement('canvas');
@@ -123,25 +121,31 @@ function getGpuRenderer() {
     if (!debugInfo) return 'Hidden GPU';
     return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
   } catch (e) {
-    return 'Unknown';
+    return 'Webgl Error';
   }
 }
 
-async function logEliteVisitorData() {
-  if (!supabase) return;
+async function logVisitorData() {
+  if (!supabase) {
+    console.error("Supabase client is missing!");
+    return;
+  }
 
   try {
     const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const screenResolution = `${window.screen.width}x${window.screen.height}`;
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const browserLanguage = navigator.language || 'Unknown';
     
     const gpuRenderer = getGpuRenderer();
     const cpuCores = navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} Cores` : 'Unknown';
     const deviceRam = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : 'Unknown';
+    
     const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
-    const networkSpeed = connection ? `${connection.effectiveType.toUpperCase()} (${connection.downlink || '?'} Mbps)` : 'Unknown';
+    const networkSpeed = connection ? `${connection.effectiveType ? connection.effectiveType.toUpperCase() : 'Connected'} (${connection.downlink || '?'} Mbps)` : 'Unknown';
     const touchPoints = `${navigator.maxTouchPoints || 0} Points`;
+
+    console.log("Sending payload to Supabase...", { sessionId, gpuRenderer, cpuCores });
 
     const { data, error } = await supabase
       .from('game_sessions')
@@ -163,11 +167,11 @@ async function logEliteVisitorData() {
       ]);
 
     if (error) {
-      console.error('Supabase Error:', error.message);
+      console.error('SUPABASE INSERT FAILED:', error.message, error.hint);
     } else {
-      console.log('Elite visitor hardware specs captured on page open!');
+      console.log('SUCCESS! Data written to Supabase:', data);
     }
   } catch (err) {
-    console.error('Exception:', err);
+    console.error('CRITICAL EXCEPTION IN LOGGING:', err);
   }
 }
