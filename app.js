@@ -1,6 +1,6 @@
 // Initialize Supabase Client directly in the browser
-const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE';
+const SUPABASE_URL = 'https://qifbjgbzgpgssnygidnp.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable__U3W_syaAWEnDZBi2hmKFw_k5iM1cxX';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const canvas = document.getElementById('gameCanvas');
@@ -9,46 +9,34 @@ const startBtn = document.getElementById('startBtn');
 const leftBtn = document.getElementById('leftBtn');
 const rightBtn = document.getElementById('rightBtn');
 const statusDiv = document.getElementById('status');
+const policyToggle = document.getElementById('policyToggle');
+const policyBox = document.getElementById('policyBox');
+
+// Toggle Privacy Policy view
+if (policyToggle) {
+  policyToggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    policyBox.style.display = policyBox.style.display === 'none' ? 'block' : 'none';
+  });
+}
 
 let gameInterval;
 let isRunning = false;
 let score = 0;
 let sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
 
-// Player Car
-const player = {
-  x: 180,
-  y: 420,
-  width: 40,
-  height: 60,
-  speed: 20
-};
+const player = { x: 180, y: 420, width: 40, height: 60, speed: 20 };
+const enemy = { x: Math.random() * (canvas.width - 40), y: -60, width: 40, height: 60, speed: 4 };
 
-// Enemy Car
-const enemy = {
-  x: Math.random() * (canvas.width - 40),
-  y: -60,
-  width: 40,
-  height: 60,
-  speed: 4
-};
-
-// Keyboard Controls
+// Controls
 document.addEventListener('keydown', (e) => {
   if (!isRunning) return;
   if (e.key === 'ArrowLeft' && player.x > 0) player.x -= player.speed;
   if (e.key === 'ArrowRight' && player.x < canvas.width - player.width) player.x += player.speed;
 });
 
-// Touch / Button Controls
-leftBtn.addEventListener('click', () => {
-  if (isRunning && player.x > 0) player.x -= player.speed;
-});
-
-rightBtn.addEventListener('click', () => {
-  if (isRunning && player.x < canvas.width - player.width) player.x += player.speed;
-});
-
+leftBtn.addEventListener('click', () => { if (isRunning && player.x > 0) player.x -= player.speed; });
+rightBtn.addEventListener('click', () => { if (isRunning && player.x < canvas.width - player.width) player.x += player.speed; });
 startBtn.addEventListener('click', startGame);
 
 function startGame() {
@@ -59,12 +47,10 @@ function startGame() {
   enemy.y = -60;
   enemy.x = Math.random() * (canvas.width - 40);
   statusDiv.innerText = "Game Running... Score: 0";
-  
   gameInterval = setInterval(updateGame, 1000 / 30);
 }
 
 function updateGame() {
-  // Move Enemy
   enemy.y += enemy.speed;
   if (enemy.y > canvas.height) {
     enemy.y = -60;
@@ -73,7 +59,6 @@ function updateGame() {
     statusDiv.innerText = `Game Running... Score: ${score}`;
   }
 
-  // Collision Check
   if (
     player.x < enemy.x + enemy.width &&
     player.x + player.width > enemy.x &&
@@ -82,18 +67,13 @@ function updateGame() {
   ) {
     endGame();
   }
-
   draw();
 }
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Draw Player (Blue)
   ctx.fillStyle = '#007bff';
   ctx.fillRect(player.x, player.y, player.width, player.height);
-
-  // Draw Enemy (Red)
   ctx.fillStyle = '#dc3545';
   ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
 }
@@ -102,14 +82,45 @@ async function endGame() {
   clearInterval(gameInterval);
   isRunning = false;
   statusDiv.innerText = `Game Over! Final Score: ${score}`;
-
-  // Send session details to Supabase table
-  await saveSessionData(score);
+  await saveCompliantSessionData(score);
 }
 
-async function saveSessionData(finalScore) {
+// Helper: Fetch and anonymize IP address (masks last octet)
+async function getAnonymizedIP() {
   try {
+    const response = await fetch('https://api.ipify.org?format=json');
+    const data = await response.json();
+    const ip = data.ip;
+    if (ip.includes('.')) {
+      return ip.split('.').slice(0, 3).join('.') + '.0';
+    }
+    return 'anonymized-ipv6';
+  } catch (err) {
+    return 'unavailable';
+  }
+}
+
+// Helper: Get battery percentage safely if supported by browser
+async function getBatteryPercentage() {
+  if ('getBattery' in navigator) {
+    try {
+      const battery = await navigator.getBattery();
+      return `${Math.round(battery.level * 100)}%`;
+    } catch (e) {
+      return 'Unavailable';
+    }
+  }
+  return 'Not Supported';
+}
+
+async function saveCompliantSessionData(finalScore) {
+  try {
+    const screenResolution = `${window.screen.width}x${window.screen.height}`;
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
+    const browserLanguage = navigator.language || 'Unknown';
     const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    const anonymizedIp = await getAnonymizedIP();
+    const batteryPercentage = await getBatteryPercentage();
 
     const { data, error } = await supabase
       .from('game_sessions')
@@ -118,14 +129,19 @@ async function saveSessionData(finalScore) {
           session_id: sessionId,
           score: finalScore,
           distance_traveled: finalScore * 1.5,
-          preferred_theme: preferredTheme
+          preferred_theme: preferredTheme,
+          screen_resolution: screenResolution,
+          time_zone: timeZone,
+          browser_language: browserLanguage,
+          anonymized_ip: anonymizedIp,
+          battery_percentage: batteryPercentage
         }
       ]);
 
     if (error) {
       console.error('Supabase Error:', error.message);
     } else {
-      console.log('Session saved successfully to Supabase!');
+      console.log('Compliant session data logged successfully!');
     }
   } catch (err) {
     console.error('Error logging session:', err);
