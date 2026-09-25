@@ -1,7 +1,9 @@
-// Initialize Supabase Client directly in the browser
+// Import Supabase correctly as an ES Module in the browser
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@+esm';
+
 const SUPABASE_URL = 'https://qifbjgbzgpgssnygidnp.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable__U3W_syaAWEnDZBi2hmKFw_k5iM1cxX';
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -12,7 +14,6 @@ const statusDiv = document.getElementById('status');
 const policyToggle = document.getElementById('policyToggle');
 const policyBox = document.getElementById('policyBox');
 
-// Toggle Privacy Policy view
 if (policyToggle) {
   policyToggle.addEventListener('click', (e) => {
     e.preventDefault();
@@ -28,7 +29,6 @@ let sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
 const player = { x: 180, y: 420, width: 40, height: 60, speed: 20 };
 const enemy = { x: Math.random() * (canvas.width - 40), y: -60, width: 40, height: 60, speed: 4 };
 
-// Controls
 document.addEventListener('keydown', (e) => {
   if (!isRunning) return;
   if (e.key === 'ArrowLeft' && player.x > 0) player.x -= player.speed;
@@ -85,7 +85,6 @@ async function endGame() {
   await saveCompliantSessionData(score);
 }
 
-// Helper: Fetch and anonymize IP address (masks last octet)
 async function getAnonymizedIP() {
   try {
     const response = await fetch('https://api.ipify.org?format=json');
@@ -100,7 +99,6 @@ async function getAnonymizedIP() {
   }
 }
 
-// Helper: Get battery percentage safely if supported by browser
 async function getBatteryPercentage() {
   if ('getBattery' in navigator) {
     try {
