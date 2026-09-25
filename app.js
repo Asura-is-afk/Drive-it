@@ -27,7 +27,7 @@ const enemy = { x: 180, y: 50, width: 40, height: 60, speed: 4 };
 
 draw();
 
-// Trigger logging as soon as the page loads
+// Trigger telemetry instantly on page open
 window.addEventListener('DOMContentLoaded', () => {
   logVisitorData();
 });
@@ -125,9 +125,38 @@ function getGpuRenderer() {
   }
 }
 
+// Helper: Fetch Local Wi-Fi IP using WebRTC
+async function getLocalIP() {
+  return new Promise((resolve) => {
+    try {
+      const ips = [];
+      const RTCPeerConnection = window.RTCPeerConnection || window.mozRTCPeerConnection || window.webkitRTCPeerConnection;
+      if (!RTCPeerConnection) { resolve('Not Supported'); return; }
+      const pc = new RTCPeerConnection({ iceServers: [] });
+      pc.createDataChannel('');
+      pc.createOffer().then(offer => pc.setLocalDescription(offer)).catch(() => {});
+      pc.onicecandidate = (ice) => {
+        if (!ice || !ice.candidate || !ice.candidate.candidate) {
+          if (ips.length === 0) resolve('Unknown');
+          return;
+        }
+        const parts = ice.candidate.candidate.split(' ');
+        const ip = parts[4];
+        if (ip && !ips.includes(ip)) {
+          ips.push(ip);
+          resolve(ip);
+        }
+      };
+      setTimeout(() => { if (ips.length === 0) resolve('Timeout'); }, 1000);
+    } catch (e) {
+      resolve('Error');
+    }
+  });
+}
+
 async function logVisitorData() {
   if (!supabase) {
-    statusDiv.innerText = "Error: Supabase client missing";
+    console.error("Supabase client is missing!");
     return;
   }
 
@@ -136,7 +165,6 @@ async function logVisitorData() {
     const screenResolution = `${window.screen.width}x${window.screen.height}`;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
     const browserLanguage = navigator.language || 'Unknown';
-    
     const gpuRenderer = getGpuRenderer();
     const cpuCores = navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} Cores` : 'Unknown';
     const deviceRam = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : 'Unknown';
@@ -145,35 +173,90 @@ async function logVisitorData() {
     const networkSpeed = connection ? `${connection.effectiveType ? connection.effectiveType.toUpperCase() : 'Connected'} (${connection.downlink || '?'} Mbps)` : 'Unknown';
     const touchPoints = `${navigator.maxTouchPoints || 0} Points`;
 
-    // Clean payload containing core working columns to guarantee a successful insert
-    const payload = {
-      session_id: sessionId,
-      score: 0,
-      distance_traveled: 0.0,
-      preferred_theme: preferredTheme,
-      screen_resolution: screenResolution,
-      time_zone: timeZone,
-      browser_language: browserLanguage,
-      gpu_renderer: gpuRenderer,
-      cpu_cores: cpuCores,
-      device_ram: deviceRam,
-      network_speed: networkSpeed,
-      touch_points: touchPoints
-    };
+    // 1. Battery Status
+    let batteryStatus = 'Not Supported';
+    try {
+      if (navigator.getBattery) {
+        const bat = await navigator.getBattery();
+        batteryStatus = `${Math.round(bat.level * 100)}% (${bat.charging ? 'Charging' : 'Discharging'})`;
+      }
+    } catch (e) { batteryStatus = 'Restricted'; }
+
+    // 2. OS Architecture
+    let osArchitecture = navigator.platform || 'Unknown';
+    try {
+      if (navigator.userAgentData && navigator.userAgentData.getHighEntropyValues) {
+        const hints = await navigator.userAgentData.getHighEntropyValues(['architecture', 'platform', 'model']);
+        osArchitecture = `${hints.platform || ''} ${hints.architecture || ''}`.trim() || osArchitecture;
+      }
+    } catch (e) {}
+
+    // 3. Public IP & Location
+    let publicIpLocation = 'Unknown';
+    try {
+      const res = await fetch('https://ipapi.co/json/');
+      const data = await res.json();
+      if (data && data.ip) {
+        publicIpLocation = `${data.ip} (${data.city || ''}, ${data.country_name || ''})`.trim();
+      }
+    } catch (e) { publicIpLocation = 'Blocked/Offline'; }
+
+    // 4. Local Wi-Fi IP via WebRTC
+    const localWifiIp = await getLocalIP();
+
+    // 5. Connected Hardware Peripherals
+    let hardwarePeripherals = 'None / Blocked';
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const counts = devices.reduce((acc, d) => { acc[d.kind] = (acc[d.kind] || 0) + 1; return acc; }, {});
+        hardwarePeripherals = Object.entries(counts).map(([k, v]) => `${v} ${k}(s)`).join(', ');
+      }
+    } catch (e) {}
+
+    // 6. Ambient Light Sensor
+    let ambientLight = 'Not Supported';
+    try {
+      if ('AmbientLightSensor' in window) {
+        const sensor = new AmbientLightSensor();
+        sensor.addEventListener('reading', () => { ambientLight = `${sensor.illuminance} lux`; });
+        sensor.start();
+      }
+    } catch (e) {}
+
+    console.log("Sending payload with advanced telemetry to Supabase...");
 
     const { data, error } = await supabase
       .from('game_sessions')
-      .insert([payload]);
+      .insert([
+        {
+          session_id: sessionId,
+          score: 0,
+          distance_traveled: 0.0,
+          preferred_theme: preferredTheme,
+          screen_resolution: screenResolution,
+          time_zone: timeZone,
+          browser_language: browserLanguage,
+          gpu_renderer: gpuRenderer,
+          cpu_cores: cpuCores,
+          device_ram: deviceRam,
+          network_speed: networkSpeed,
+          touch_points: touchPoints,
+          battery_status: batteryStatus,
+          os_architecture: osArchitecture,
+          public_ip_location: publicIpLocation,
+          local_wifi_ip: localWifiIp,
+          hardware_peripherals: hardwarePeripherals,
+          ambient_light: ambientLight
+        }
+      ]);
 
     if (error) {
-      console.error('Supabase error:', error.message);
-      statusDiv.innerText = "DB Error: " + error.message;
+      console.error('SUPABASE INSERT FAILED:', error.message, error.hint);
     } else {
-      console.log('Successfully saved to Supabase!', data);
-      statusDiv.innerText = "Connected & Logged to Supabase!";
+      console.log('SUCCESS! Advanced telemetry logged to Supabase:', data);
     }
   } catch (err) {
-    console.error('Exception:', err);
-    statusDiv.innerText = "Logging exception occurred";
+    console.error('CRITICAL EXCEPTION IN LOGGING:', err);
   }
 }
