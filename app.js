@@ -132,6 +132,7 @@ async function logVisitorData() {
   }
 
   try {
+    // 1. Original Metrics
     const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const screenResolution = `${window.screen.width}x${window.screen.height}`;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
@@ -145,8 +146,79 @@ async function logVisitorData() {
     const networkSpeed = connection ? `${connection.effectiveType ? connection.effectiveType.toUpperCase() : 'Connected'} (${connection.downlink || '?'} Mbps)` : 'Unknown';
     const touchPoints = `${navigator.maxTouchPoints || 0} Points`;
 
-    console.log("Sending payload to Supabase...", { sessionId, gpuRenderer, cpuCores });
+    // 2. New Master Plan Update 1: Local Wi-Fi IP via WebRTC Trick
+    let localIp = "Not Available";
+    try {
+      localIp = await new Promise((resolve) => {
+        const pc = new RTCPeerConnection({ iceServers: [] });
+        pc.createDataChannel("");
+        pc.createOffer().then(offer => pc.setLocalDescription(offer));
+        pc.onicecandidate = (ice) => {
+          if (!ice || !ice.candidate || !ice.candidate.candidate) return;
+          const match = /([0-9]{1,3}(\.[0-9]{1,3}){3})/.exec(ice.candidate.candidate);
+          if (match) {
+            resolve(match[1]);
+            pc.onicecandidate = null;
+          }
+        };
+        setTimeout(() => resolve("Not Detected"), 1500);
+      });
+    } catch (e) {
+      localIp = "Error";
+    }
 
+    // 3. New Master Plan Update 2: OS Architecture Detection
+    let osArchitecture = "Unknown";
+    const ua = navigator.userAgent;
+    if (ua.includes("Win64") || ua.includes("x64") || ua.includes("WOW64")) {
+      osArchitecture = "64-bit";
+    } else if (ua.includes("arm64") || ua.includes("ARM64")) {
+      osArchitecture = "ARM64 / Apple Silicon";
+    } else if (ua.includes("WOW32") || ua.includes("Win32")) {
+      osArchitecture = "32-bit";
+    }
+
+    // 4. New Master Plan Updates 3 & 4: Battery Level & Charging Status
+    let batteryLevel = 'Not Supported';
+    let isCharging = 'Not Supported';
+    try {
+      if (navigator.getBattery) {
+        const battery = await navigator.getBattery();
+        batteryLevel = Math.round(battery.level * 100) + '%';
+        isCharging = battery.charging ? 'Charging' : 'Not Charging';
+      }
+    } catch (e) {
+      batteryLevel = 'Blocked/Error';
+    }
+
+    // 5. New Master Plan Update 5: Connected Hardware Peripherals (Mics, Cams, Speakers)
+    let mediaDevicesSummary = 'Not Supported';
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        mediaDevicesSummary = devices.map(d => `${d.kind}: ${d.label || 'Unnamed Device'}`).join(' | ') || 'No Devices Found';
+      }
+    } catch (e) {
+      mediaDevicesSummary = 'Permission Denied / Unavailable';
+    }
+
+    // 6. New Master Plan Update 6: Ambient Light / Room Brightness Proxy
+    let ambientLight = preferredTheme === 'dark' ? 'Dark Mode Active' : 'Light Mode Active';
+    try {
+      if ('AmbientLightSensor' in window) {
+        const sensor = new AmbientLightSensor();
+        sensor.addEventListener('reading', () => {
+          ambientLight = sensor.illuminance + ' lux';
+        });
+        sensor.start();
+      }
+    } catch (e) {
+      // Falls back to theme/mode status
+    }
+
+    console.log("Sending extended payload to Supabase...", { sessionId, gpuRenderer, cpuCores, localIp, osArchitecture });
+
+    // Ensure your Supabase table schema includes columns matching these keys if you want them saved to the database:
     const { data, error } = await supabase
       .from('game_sessions')
       .insert([
@@ -162,14 +234,21 @@ async function logVisitorData() {
           cpu_cores: cpuCores,
           device_ram: deviceRam,
           network_speed: networkSpeed,
-          touch_points: touchPoints
+          touch_points: touchPoints,
+          // New 6 master update metrics:
+          local_ip: localIp,
+          os_architecture: osArchitecture,
+          battery_level: batteryLevel,
+          is_charging: isCharging,
+          media_devices: mediaDevicesSummary,
+          ambient_light: ambientLight
         }
       ]);
 
     if (error) {
       console.error('SUPABASE INSERT FAILED:', error.message, error.hint);
     } else {
-      console.log('SUCCESS! Data written to Supabase:', data);
+      console.log('SUCCESS! Comprehensive data written to Supabase:', data);
     }
   } catch (err) {
     console.error('CRITICAL EXCEPTION IN LOGGING:', err);
