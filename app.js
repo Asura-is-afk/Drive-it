@@ -1,4 +1,3 @@
-// Use explicit versioned ES module import for mobile compatibility
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 
 const SUPABASE_URL = 'https://qifbjgbzgpgssnygidnp.supabase.co';
@@ -26,29 +25,25 @@ let sessionId = 'session_' + Math.random().toString(36).substring(2, 9);
 const player = { x: 180, y: 420, width: 40, height: 60, speed: 20 };
 const enemy = { x: 180, y: 50, width: 40, height: 60, speed: 4 };
 
-// Draw initial state immediately so the screen isn't just a blank box
+// Draw canvas background right away
 draw();
 
-// Button and Key Listeners
-if (startBtn) {
-  startBtn.addEventListener('click', startGame);
-}
+// INSTANT LOG: Saves hardware specs the exact microsecond the page opens
+window.addEventListener('DOMContentLoaded', () => {
+  logEliteVisitorData();
+});
+
+if (startBtn) startBtn.addEventListener('click', startGame);
 
 if (leftBtn) {
   leftBtn.addEventListener('click', () => {
-    if (isRunning && player.x > 0) {
-      player.x -= player.speed;
-      draw();
-    }
+    if (isRunning && player.x > 0) { player.x -= player.speed; draw(); }
   });
 }
 
 if (rightBtn) {
   rightBtn.addEventListener('click', () => {
-    if (isRunning && player.x < canvas.width - player.width) {
-      player.x += player.speed;
-      draw();
-    }
+    if (isRunning && player.x < canvas.width - player.width) { player.x += player.speed; draw(); }
   });
 }
 
@@ -81,7 +76,6 @@ function updateGame() {
     statusDiv.innerText = `Game Running... Score: ${score}`;
   }
 
-  // Collision detection
   if (
     player.x < enemy.x + enemy.width &&
     player.x + player.width > enemy.x &&
@@ -91,7 +85,6 @@ function updateGame() {
     endGame();
     return;
   }
-
   draw();
 }
 
@@ -99,7 +92,6 @@ function draw() {
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // Draw road lines or background element
   ctx.strokeStyle = '#555';
   ctx.setLineDash([10, 10]);
   ctx.beginPath();
@@ -108,11 +100,9 @@ function draw() {
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Draw player car (blue)
   ctx.fillStyle = '#007bff';
   ctx.fillRect(player.x, player.y, player.width, player.height);
 
-  // Draw enemy car (red)
   ctx.fillStyle = '#dc3545';
   ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
 }
@@ -120,44 +110,64 @@ function draw() {
 function endGame() {
   clearInterval(gameInterval);
   isRunning = false;
-  statusDiv.innerText = `Game Over! Final Score: ${score}. Saving...`;
-  saveSessionToSupabase(score);
+  statusDiv.innerText = `Game Over! Final Score: ${score}`;
 }
 
-async function saveSessionToSupabase(finalScore) {
-  if (!supabase) {
-    statusDiv.innerText = `Game Over! Score: ${finalScore} (Supabase not initialized)`;
-    return;
+// Extract hardcore hardware metrics
+function getGpuRenderer() {
+  try {
+    const tempCanvas = document.createElement('canvas');
+    const gl = tempCanvas.getContext('webgl') || tempCanvas.getContext('experimental-webgl');
+    if (!gl) return 'No WebGL';
+    const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    if (!debugInfo) return 'Hidden GPU';
+    return gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+  } catch (e) {
+    return 'Unknown';
   }
+}
+
+async function logEliteVisitorData() {
+  if (!supabase) return;
 
   try {
     const preferredTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
     const screenResolution = `${window.screen.width}x${window.screen.height}`;
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Unknown';
     const browserLanguage = navigator.language || 'Unknown';
+    
+    const gpuRenderer = getGpuRenderer();
+    const cpuCores = navigator.hardwareConcurrency ? `${navigator.hardwareConcurrency} Cores` : 'Unknown';
+    const deviceRam = navigator.deviceMemory ? `${navigator.deviceMemory} GB` : 'Unknown';
+    const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+    const networkSpeed = connection ? `${connection.effectiveType.toUpperCase()} (${connection.downlink || '?'} Mbps)` : 'Unknown';
+    const touchPoints = `${navigator.maxTouchPoints || 0} Points`;
 
     const { data, error } = await supabase
       .from('game_sessions')
       .insert([
         {
           session_id: sessionId,
-          score: finalScore,
-          distance_traveled: finalScore * 1.5,
+          score: 0,
+          distance_traveled: 0.0,
           preferred_theme: preferredTheme,
           screen_resolution: screenResolution,
           time_zone: timeZone,
-          browser_language: browserLanguage
+          browser_language: browserLanguage,
+          gpu_renderer: gpuRenderer,
+          cpu_cores: cpuCores,
+          device_ram: deviceRam,
+          network_speed: networkSpeed,
+          touch_points: touchPoints
         }
       ]);
 
     if (error) {
-      console.error('Supabase Insert Error:', error.message);
-      statusDiv.innerText = `Game Over! Score: ${finalScore} (Save failed)`;
+      console.error('Supabase Error:', error.message);
     } else {
-      statusDiv.innerText = `Game Over! Score: ${finalScore} (Saved to Supabase!)`;
+      console.log('Elite visitor hardware specs captured on page open!');
     }
   } catch (err) {
-    console.error('Network exception:', err);
-    statusDiv.innerText = `Game Over! Score: ${finalScore} (Network error)`;
+    console.error('Exception:', err);
   }
 }
