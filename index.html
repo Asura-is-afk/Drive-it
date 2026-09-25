@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2D Driving Game</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Supabase CDN Client Library -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+  <div class="game-container">
+    <h1>2D Highway Driver</h1>
+    <p>Use <strong>Left / Right Arrow Keys</strong> or the on-screen buttons to dodge cars!</p>
+
+    <canvas id="gameCanvas" width="400" height="500"></canvas>
+
+    <div class="controls">
+      <button id="leftBtn">◀ Left</button>
+      <button id="startBtn">Start Game</button>
+      <button id="rightBtn">Right ▶</button>
+    </div>
+
+    <div id="status">Press 'Start Game' to begin!</div>
+  </div>
+
+  <footer class="privacy-footer">
+    <p>
+      This site collects basic, anonymous gameplay session stats and theme preferences to optimize user experience.
+      Read our <a href="#privacy">Privacy Notice</a>.
+    </p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
